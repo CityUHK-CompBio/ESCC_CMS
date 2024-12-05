@@ -1,2 +1,2 @@
 # ESCC_CMS
-This repository contains the primary code for the ESCC_CMS project, focusing on research and analysis related to Esophageal Squamous Cell Carcinoma (ESCC)
+The repository contains the construction of ESCC consensus molecular subtypes and the implementation of a user-friendly image classifier, including all the code required for generating figures for publication.
