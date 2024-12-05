@@ -1,0 +1,533 @@
+---
+title: "image_analysis"
+author: "Yinghan"
+date: 
+output: html_document
+---
+
+```{r}
+#准备包和函数
+options(java.parameters = "-Xmx50g")
+library(bartMachine)
+library(doParallel)
+library(stringr)
+library(car)
+library(stringr)
+library(ggpubr)
+library(ggplot2)
+library(cowplot)
+library(caret)
+library(ggalluvial)
+##计算p值的function
+P_cal <- function(clinical,labels){
+            time <- clinical[, 1]
+            event <- clinical[, 2] == 1
+            df <- data.frame(futime = time, fustat = event, group = labels)
+            surv <- survival::survfit(survival::Surv(futime, fustat) ~ 
+                                        group, data = df)
+            survstats <- survival::survdiff(survival::Surv(futime, fustat) ~ 
+                                              group, data = df)
+            survstats$p.value <- 1 - pchisq(survstats$chisq, length(survstats$n) - 
+                                              1)
+            return(survstats$p.value)
+}
+#OS_function
+myplot <- function (clinical, labels, limit = NULL, annot = NULL, color = NULL, 
+  font = "Arial", xlab = "Follow up", ylab = "Survival Probability", 
+  title = NULL, legend.pos = "top", palette = "jama_classic", 
+  risk.table = T, risk.table.ratio = 0.4, anno.pos = "bottom", 
+  anno.x.shift = 0.5) 
+{
+  time <- clinical[, 1]
+  event <- clinical[, 2] == 1
+  if (!is.null(limit)) {
+    event[time > limit] <- F
+    time[time > limit] <- limit
+  }
+  df <- data.frame(futime = time, fustat = event, group = labels)
+  surv <- survival::survfit(survival::Surv(futime, fustat) ~ 
+    group, data = df)
+  survstats <- survival::survdiff(survival::Surv(futime, fustat) ~ 
+    group, data = df)
+  survstats$p.value <- 1 - pchisq(survstats$chisq, length(survstats$n) - 
+    1)
+  if (!is.null(color)) {
+    if (!is.null(names(color))) {
+      labels <- factor(labels, levels = names(color))
+    }
+  }
+  else {
+    color <- get_color(palette, n = length(unique(labels)))
+  }
+  if (class(labels) == "factor") {
+    legend.labs <- na.omit(levels(droplevels(labels[!(is.na(time) | 
+      is.na(event))])))
+  }
+  else if (class(labels) == "logical") {
+    labels <- factor(labels, levels = c(F, T))
+    legend.labs <- na.omit(levels(droplevels(labels)))
+  }
+  else {
+    legend.labs <- na.omit(unique(labels))
+    labels <- factor(labels, levels = legend.labs)
+  }
+  fancy_scientific <- function(l, dig = 3) {
+    l <- format(l, digits = dig, scientific = TRUE)
+    l <- gsub("^(.*)e", "'\\1'e", l)
+    l <- gsub("e", "%*%10^", l)
+    parse(text = l)
+  }
+  p <- survminer::ggsurvplot(surv, data = df, xlab = xlab, 
+    ylab = ylab, palette = color, legend = legend.pos, legend.labs = legend.labs, 
+    risk.table = risk.table, risk.table.title = element_blank(), 
+    risk.table.y.text = FALSE, ggtheme = cowplot::theme_cowplot())
+  p$plot <- p$plot + ggtitle(title) + theme(plot.title = element_text(hjust = 0.5), 
+    text = element_text(family = font), title = element_text(family = font), 
+    axis.text.x = element_text(family = font), legend.title = element_blank())
+  anno.text <- ifelse(survstats$p.value == 0, "italic(P)<1%*%10^{-22}", 
+    paste0("italic(P)==", fancy_scientific(survstats$p.value, 
+      3)))
+  anno.y.shift <- 0
+  if (length(legend.labs) == 2) {
+    hr <- survcomp::hazard.ratio(labels[!(is.na(time) | 
+      is.na(event))], time[!(is.na(time) | is.na(event))], 
+      event[!(is.na(time) | is.na(event))])
+    anno.text <- c(anno.text, sprintf("HR == %3.2f~(%3.2f - %3.2f)", 
+      hr$hazard.ratio, hr$lower, hr$upper))
+    anno.y.shift <- c(anno.y.shift + 0.15, 0)
+  }
+  if (!is.null(annot)) {
+    anno.text <- c(anno.text, annot)
+    anno.y.shift <- c(anno.y.shift + 0.15, 0)
+  }
+  if (anno.pos == "bottom") {
+    p$plot <- p$plot + annotate("text", family = font, x = 0, 
+      y = anno.y.shift, label = anno.text, hjust = 0, 
+      vjust = 0, parse = TRUE)
+  }
+  else {
+    p$plot <- p$plot + annotate("text", family = font, x = anno.x.shift * 
+      max(time, na.rm = T), y = 0.85 + anno.y.shift, label = anno.text, 
+      hjust = 0, vjust = 2, parse = TRUE)
+  }
+  if (risk.table) {
+    p$table <- p$table + theme(text = element_text(family = font), 
+      title = element_text(family = font), axis.text = element_text(family = font), 
+      axis.title.y = element_blank())
+    pp <- plot_grid(plotlist = list(p$plot + theme(axis.title.x = element_blank()), 
+      p$table + labs(x = xlab)), labels = "", ncol = 1, 
+      align = "v", rel_heights = c(1, risk.table.ratio))
+    return(pp)
+  }
+  else return(p$plot)
+}
+```
+
+
+```{r}
+#Figure 4C
+
+All_loc <- SXMI_loc_select
+
+distributionOfPatch<- sapply(1:length(All_loc),function(i){
+  mat <- All_loc[[i]]
+  tmp <- c(length(which(mat==1)),length(which(mat==2)),length(which(mat==3)),length(which(mat==4)),length(which(mat==5)),
+           length(which(mat==6)),length(which(mat==7)),length(which(mat==8)) )
+  return(tmp)
+})
+
+rownames(distributionOfPatch) <-c('back','con', 'epi', 'gla', 'lym', 'mus', 'str', 'tum')
+
+colnames(distributionOfPatch) <- names(All_loc)
+
+totalnum <- colSums(distributionOfPatch)
+distributionOfPatch_ratio <- t(t(distributionOfPatch)/totalnum)
+
+distriPlot <- data.frame(num=c(t(distributionOfPatch_ratio)))
+distriPlot$class <- rep(c('BACK', 'CON', 'EPI', 'GLA', 'LYM', 'MUS', 'STR', 'TUM'),each=ncol(distributionOfPatch_ratio))
+distriPlot$color <- factor(rep(c(1:8),each=ncol(distributionOfPatch_ratio)),) 
+
+ggplot(distriPlot, aes(x=class, y=num,fill=color,color=color)) + 
+  geom_boxplot(notch=T,notchwidth = 0.6,width = 0.6,lwd=1.5)+ # 
+  stat_boxplot(geom ='errorbar',width = 0.4)+
+  labs(title="", x="", y="")+   
+  theme(axis.title.x = element_text(size = 15,family ="serif"),axis.title.y = element_text(size = 15,family ="serif"),
+        plot.title = element_text( color="black", size=15,face="plain",hjust = 0.5,family ="serif"),
+        axis.text.x = element_text(size=15,family ="serif"),axis.text.y = element_text(size=15,family ="serif"),axis.ticks = element_blank(),
+        legend.position="none",
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  scale_fill_manual(values=c("#1974d2","#696969","#FFA343","NavajoWhite","#C364C5","#CD5C5C","#4682B4","#1CAC78"))+ # ,"#1974d2"
+  scale_color_manual(values=c("#1974d2","#696969","#FFA343","NavajoWhite","#C364C5","#CD5C5C","#4682B4","#1CAC78"))
+```
+
+
+
+```{r}
+#install extraTrees and dummies if you don't have one
+#install.packages("./extraTrees_1.0.5.tar.gz", repos = NULL, type = "source")
+#install.packages("./dummies_1.5.6.tar.gz", repos = NULL, type = "source")
+##分析代表性不足的亚型&&筛选和新样本
+
+ntree <- 100
+mtry <- 2
+numRandomCuts <- 2
+nodesize <- 2
+
+#load("./SXMI_sample.rdata")
+Label4slides <- factor(Label4slides,levels = c(1,2,3,4),
+                                       labels = c("ECMS1","ECMS2","ECMS3","ECMS4"))
+Counts <- lapply(1:100,function(Times){
+  set.seed(Times)
+  ind <- sample(1:nrow(SXMI_tissueOmics_multi_loc_004),ceiling(0.9*nrow(SXMI_tissueOmics_multi_loc_004)),replace = FALSE)
+  trainD <- SXMI_tissueOmics_multi_loc_004[ind,]
+  trainL <- Label4slides[ind]
+  testD <- SXMI_tissueOmics_multi_loc_004[-ind,]
+  testL <- Label4slides[-ind]
+  rfout <- extraTrees::extraTrees(trainD, trainL, ntree=ntree,mtry = mtry, numRandomCuts = numRandomCuts,nodesize=nodesize,numThreads = 8)
+  rfpred <- predict(rfout, testD) 
+  #内存管理---
+  rm(trainD)
+  rm(trainL)
+  rm(rfout)
+  #内存管理---
+  tmp <- rfpred==testL
+  names(tmp) <- rownames(testD)
+  gc()
+  return(tmp)
+})
+
+Counts <- do.call(c,Counts)
+gc()
+uniqueNames <- unique(names(Counts))
+ratio <- sapply(uniqueNames, function(xxx){
+  tmp <- which(names(Counts)==xxx)
+  tmp_ratio <- mean(Counts[tmp])
+  return(tmp_ratio)
+})
+
+ratio <- ratio[match(names(Label4slides),names(ratio))]
+ind_discard <- which(ratio<=0.1)
+
+Label4slides_selected <- Label4slides[-ind_discard]
+temp1=as.data.frame(Label4slides_selected)
+
+Label4slides_frSXMI <- table(Label4slides)
+Label4slides_selected_frSXMI <- table(Label4slides_selected)
+represent_ratio <- Label4slides_selected_frSXMI / Label4slides_frSXMI
+
+# 代表性不足的类为4类
+print(represent_ratio)
+```
+
+```{r}
+#Figure 4D
+
+SXMI_tissueOmics_multi_loc[is.na(SXMI_tissueOmics_multi_loc)] <- 0
+
+load("./cmsLabel.rdata")
+names(all.cms.group) <- paste0("SZESCC",as.numeric(substr(names(all.cms.group),1,3))+680 ,sep="")
+SXMI_Clinical$SNF <- all.cms.group[match(SXMI_Clinical$IMID,names(all.cms.group))]
+SXMI_Clinical <- SXMI_Clinical[!is.na(SXMI_Clinical$SNF),]#ECMS分型信息
+
+Label4slides <- SXMI_Clinical$SNF[match(substr(rownames(SXMI_tissueOmics_multi_loc),1,9), SXMI_Clinical$IMID )]
+names(Label4slides) <- rownames(SXMI_tissueOmics_multi_loc)
+Label4slides <- stringr::str_replace_all(Label4slides,"ECMS","")
+
+SXMI_tissueOmics_multi_loc <- SXMI_tissueOmics_multi_loc[!is.na(Label4slides),]
+Label4slides <- Label4slides[!is.na(Label4slides)]
+all.SXMIual(rownames(SXMI_tissueOmics_multi_loc), names(Label4slides) )
+
+m1 <- apply(SXMI_tissueOmics_multi_loc,2,mad)
+SXMI_tissueOmics_multi_loc<-SXMI_tissueOmics_multi_loc[,which(m1>0)]
+
+# scale
+SXMI_tissueOmics_multi_loc <- as.data.frame((SXMI_tissueOmics_multi_loc))
+
+# barplot
+Matrix <- SXMI_tissueOmics_multi_loc
+Matrix$Subtype <- Label4slides
+index1 <- which(Label4slides== "1")
+index2 <- which(Label4slides== "2")
+index3 <- which(Label4slides== "3")
+index4 <- which(Label4slides== "4")
+
+# all raw
+con <- distri_barplot(Matrix = (Matrix),index = Matrix$WS_infil_ratiocon,title = "Connective")
+epi <- distri_barplot(Matrix = (Matrix),index = Matrix$WS_infil_ratioepi,title = "Epithelium")
+gla <- distri_barplot(Matrix = (Matrix),index = Matrix$WS_infil_ratiogla,title = "Glands")
+lym <- distri_barplot(Matrix = (Matrix),index = Matrix$WS_infil_ratiolym,title = "Lymphocyte")
+mus <- distri_barplot(Matrix = (Matrix),index = Matrix$WS_infil_ratiomus,title = "Muscle")
+str <- distri_barplot(Matrix = (Matrix),index = Matrix$WS_infil_ratiostr,title = "Stroma")
+tum <- distri_barplot(Matrix = (Matrix),index = Matrix$WS_infil_ratiotum,title = "Tumor")
+
+aa <- plot_grid(con[[1]],epi[[1]],gla[[1]],lym[[1]],mus[[1]],str[[1]],tum[[1]],ncol = 3,align = "hv")
+
+# + pvalues
+a1 <- round(wilcox.test(Matrix$WS_infil_ratiocon[index2],Matrix$WS_infil_ratiocon[-index2])$p.value,3)
+if(a1==0){a1 = "< 0.001"}
+con2 <- con[[1]] + annotate("text",  x=0.5, y = Inf, label = paste0("ECMS2 vs. others: ",a1), vjust=1, hjust=0,size = 5)
+
+a1 <- round(wilcox.test(Matrix$WS_infil_ratioepi[index3],Matrix$WS_infil_ratioepi[-index3])$p.value,3)
+if(a1==0){a1 = "< 0.001"}
+epi2 <- epi[[1]] + annotate("text",  x=0.5, y = Inf, label = paste0("ECMS3 vs. others: ",a1), vjust=1, hjust=0,size = 5)
+
+a1 <- round(wilcox.test(Matrix$WS_infil_ratiogla[index3],Matrix$WS_infil_ratiogla[-index3])$p.value,3)
+if(a1==0){a1 = "< 0.001"}
+gla2 <- gla[[1]] + annotate("text",  x=0.5, y = Inf, label = paste0("ECMS3 vs. others: ",a1), vjust=1, hjust=0,size = 5)
+
+a1 <- round(wilcox.test(Matrix$WS_infil_ratiolym[index3],Matrix$WS_infil_ratiolym[-index3])$p.value,3)
+if(a1==0){a1 = "< 0.001"}
+lym2 <- lym[[1]] + annotate("text",  x=0.5, y = Inf, label = paste0("ECMS3 vs. others: ",a1), vjust=1, hjust=0,size = 5)
+
+a1 <- round(wilcox.test(Matrix$WS_infil_ratiomus[index3],Matrix$WS_infil_ratiomus[-index3])$p.value,3)
+if(a1==0){a1 = "< 0.001"}
+mus2 <- mus[[1]] + annotate("text",  x=0.5, y = Inf, label = paste0("ECMS3 vs. others: ",a1), vjust=1, hjust=0,size = 5)
+
+a1 <- round(wilcox.test(Matrix$WS_infil_ratiostr[index4],Matrix$WS_infil_ratiostr[-index4])$p.value,3)
+if(a1==0){a1 = "< 0.001"}
+str2 <- str[[1]] + annotate("text",  x=0.5, y = Inf, label = paste0("ECMS4 vs. others: ",a1), vjust=1, hjust=0,size = 5)
+
+a1 <- round(wilcox.test(Matrix$WS_infil_ratiotum[index2],Matrix$WS_infil_ratiotum[-index2])$p.value,3)
+if(a1==0){a1 = "< 0.001"}
+tum2 <- tum[[1]] + annotate("text",  x=0.5, y = Inf, label = paste0("ECMS2 vs. others: ",a1), vjust=1, hjust=0,size = 5)
+
+aa2 <- plot_grid(con2,epi2,gla2,lym2,mus2,str2,tum2,ncol = 3,align = "hv")
+aa3 <- plot_grid(con2,epi2,gla2,mus2,str2,ncol = 3,align = "hv")
+
+```
+
+```{r}
+#Figure 4E
+
+wilcox.test(as.numeric(EstimateScore$ImmuneScore[which(EstimateScore$Subtype=="ECMS1")]), 
+            as.numeric(EstimateScore$ImmuneScore[which(EstimateScore$Subtype!="ECMS1")]))
+
+wilcox.test(as.numeric(EstimateScore$TumorPurity[which(EstimateScore$Subtype=="ECMS2")]), 
+            as.numeric(EstimateScore$TumorPurity[which(EstimateScore$Subtype!="ECMS2")]))
+wilcox.test(as.numeric(EstimateScore$TumorPurity[which(EstimateScore$Subtype=="ECMS3")]), 
+            as.numeric(EstimateScore$TumorPurity[which(EstimateScore$Subtype!="ECMS3")]))
+
+# barplot
+Matrix <- EstimateScore
+Matrix$Subtype <- str_replace_all(EstimateScore$Subtype,"ECMS","")
+
+lym_plot <- distri_barplot(Matrix = (Matrix),index = Matrix$ImmuneScore,title = "ImmuneScore")
+tum_plot <- distri_barplot(Matrix = (Matrix),index = Matrix$TumorPurity,title = "TumorPurity")
+
+plot_grid(lym_plot[[1]],tum_plot[[1]],ncol = 2,align = "hv")
+
+```
+
+
+```{r}
+#Figure5b
+rSXMIuire(pROC)
+rSXMIuire(ggplot2)
+library(doParallel)
+library(pROC)
+########################################
+# glm.scores rf.scores glm.labels  rf.labels are vectors
+
+#save(scores, file = "./scores.rdata")
+#save(labels, file = "./scores.rdata")
+load("./scores.rdata")
+load("./scores.rdata")
+# roc line colors. e.g. if two rocs. color = c("black","red")
+color <- c("#00468BFF","#ED0000FF","#42B540FF","#0099B4FF")
+########################################
+
+set.seed(100)
+roclist <- lapply(1:length(scores), function(i){
+      index <- !is.na(scores[[i]])
+      pROC::roc(labels[[i]][index], scores[[i]][index])
+ })
+ names(roclist) <- names(scores)
+ dat.ci <- data.frame( x=NA, se.lower=NA, se.upper=NA, group = NA, y =NA, sp.lower = NA, sp.upper = NA )
+ for(group_name in names(roclist)){
+        registerDoParallel(10)
+        se.ciobj <- ci.se(roclist[[group_name]], specificities = sSXMI(0, 1, l = 100), boot.n = 2000, parallel = TRUE)
+        registerDoParallel(10)
+        sp.ciobj <- ci.sp(roclist[[group_name]], sensitivities = sSXMI(0, 1, l = 100), boot.n = 2000, parallel = TRUE)
+        dat.ci.tmp <- data.frame(x = as.numeric(rownames(se.ciobj)), se.lower = se.ciobj[, 1], se.upper = se.ciobj[, 3],  group = group_name, y = as.numeric(rownames(sp.ciobj)), sp.lower = sp.ciobj[, 1], sp.upper = se.ciobj[, 3] )
+        dat.ci <- rbind(dat.ci, dat.ci.tmp)
+}
+dat.ci <- dat.ci[-c(1),]
+annot <- c()
+aucs <- c()
+for(group_name in names(roclist)){
+    auc <- pROC::ci(roclist[[group_name]])[c(2, 1, 3)]
+    others <- pROC::coords(roclist[[group_name]], "best", ret = c("sensitivity", "specificity"), best.policy = "omit")
+
+    annot <- c(annot, sprintf("%.2f (%.2f-%.2f)", auc[1], auc[2], auc[3])  ) # 常用，AUC CI 
+    aucs <- c(aucs, auc[1])
+}
+annot <- paste0(stringr::str_pad(names(roclist), max(sapply(names(roclist), nchar))+1, "right"), "\t", annot)
+colors <- color
+names(colors) <- names(roclist)
+
+roc_curve <- pROC::ggroc(roclist, legacy.axes = TRUE, size=0.93) +  labs(x = "1 - Specificity", y = "Sensitivity") + scale_color_manual(labels = annot, values = colors ) + theme_classic() +  geom_abline(linetype = "dashed", alpha = 0.3) + coord_SXMIual() + geom_ribbon( data = dat.ci, inherit.aes = FALSE, show.legend = FALSE, aes(x = 1-x, xmin = 1-sp.upper, xmax = 1-sp.lower, y =y, ymin = se.lower, ymax = se.upper, group=group, fill=as.factor(group)), alpha = 0.1) + scale_fill_manual(values=colors) + theme(legend.title = element_blank()) 
+
+```
+
+```{r}
+#Figure 5 C&D&G
+#load("./rst_final_model.rdata")
+#seed <- 738
+#set.seed(seed)
+xtest <- SXMI_tissueOmics_multi_loc
+Pred_SXMI <- predict(final_model,xtest)
+pred_SXMI_prob <- predict(final_model,xtest, probability=TRUE)
+
+merged_df <- merge(temp1, SXMI_tissueOmics_multi_loc, by = "row.names", all = FALSE)
+merged_df <- merged_df[, -c(1,2)]
+Pred_SXMI_core <- predict(final_model,merged_df)
+
+Names <- substr(rownames(SXMI_tissueOmics_multi_loc),1,9)
+uniqueName <- unique(Names)
+Vote_max_slides_SXMI <- list()
+frSXMIuency_table_list <- list()
+
+for (xxx in uniqueName) {
+  ind <- which(Names == xxx)  # 找到匹配的索引
+  all_result <- Pred_SXMI[ind[1]:ind[length(ind)]]
+  frSXMIuency_table <- table(all_result)
+  frSXMIuency_table_list[[xxx]] <- frSXMIuency_table
+  if (sum(frSXMIuency_table == max(frSXMIuency_table)) >= 2) {
+    back <- NA
+  }else {
+    most_frSXMIuent_element <- names(frSXMIuency_table)[which.max(frSXMIuency_table)]
+    back <- most_frSXMIuent_element
+  }
+  if (frSXMIuency_table[which.max(frSXMIuency_table)] != length(ind) && frSXMIuency_table[4] > 0) {
+    back <- "ECMS4"
+  }
+  Vote_max_slides_SXMI[[xxx]] <- back  # 将结果存储在列表中
+}
+
+names(Vote_max_slides_SXMI) <- uniqueName
+Vote_max_slides_SXMI <- do.call(c,Vote_max_slides_SXMI)
+
+Vote_max_slides_SXMI <- Vote_max_slides_SXMI[match(SXMI_Clinical$IMID,names(Vote_max_slides_SXMI))]
+test=as.data.frame(Vote_max_slides_SXMI)
+labels <- factor(Vote_max_slides_SXMI)
+legend.labs <- as.vector(na.omit(unique(labels)))
+
+input <- as.data.frame(cbind(SXMI_Clinical$os.time/30,SXMI_Clinical$os.event)) 
+input$V1 <- as.numeric(input$V1)
+input$V1 <- as.numeric(input$V1)
+SXMI_OS <- myplot(input,labels,ylab="Overall survival",font = "sans",
+                  risk.table = T,risk.table.ratio = 0.4,title = "SXM-I",
+                  legend.pos = c(0.65,0.18),xlab="Follow up",color=c("#00468BFF", "#ED0000FF", "#42B540FF", "#0099B4FF","black"))
+
+input <- as.data.frame( cbind(SXMI_Clinical$rfs.time/30,SXMI_Clinical$rfs.event)) 
+input$V1 <- as.numeric(input$V1)
+SXMI_DFS <- myplot(input,labels,ylab="Disease-free survival",font = "sans",
+                  risk.table = T,risk.table.ratio = 0.4,title = "SXM-I",
+                  legend.pos = c(0.65,0.18),xlab="Follow up",color=c("#00468BFF", "#ED0000FF", "#42B540FF", "#0099B4FF"))
+#Figure 5g
+Vote_max_slides_SXMII <- list()
+xtest_SXMII<- SXMII_tissueOmics_multi_loc[,colnames(SXMI_tissueOmics_multi_loc)]
+xtest_SXMII <- scale(xtest_SXMII)
+Pred_SXMII <- predict(rfout,xtest_SXMII)
+pred_SXMII_prob <- predict(rfout,xtest_SXMII, probability=TRUE)
+# major vote for each patient6
+Names_SXMII <- substr(rownames(SXMII_tissueOmics_multi_loc),1,9)
+uniqueName_SXMII <- unique(Names_SXMII)
+rm(xtest_SXMII)
+
+for (xxx in uniqueName_SXMII) {
+  ind <- which(Names_SXMII == xxx)  # 找到匹配的索引
+  all_result <- Pred_SXMII[ind[1]:ind[length(ind)]]
+  frSXMIuency_table <- table(all_result)
+  if (sum(frSXMIuency_table == max(frSXMIuency_table)) >= 2) {
+    back <- NA
+  }else {
+    most_frSXMIuent_element <- names(frSXMIuency_table)[which.max(frSXMIuency_table)]
+    back <- most_frSXMIuent_element
+  }
+  if (frSXMIuency_table[which.max(frSXMIuency_table)] != length(ind) && frSXMIuency_table[4] > 0) {
+    back <- "ECMS4"
+  }
+  Vote_max_slides_SXMII[[xxx]] <- back  # 将结果存储在列表中
+}
+
+SXMII_Clinical <- dataframeC
+names(Vote_max_slides_SXMII) <- uniqueName_SXMII
+Vote_max_slides_SXMII <- do.call(c,Vote_max_slides_SXMII)
+
+Vote_max_slides_SXMII <- Vote_max_slides_SXMII[match(SXMII_Clinical$SZID,names(Vote_max_slides_SXMII))]
+
+factor_labels <- labels(Vote_max_slides_SXMII)
+
+sum(Names_SXMII %in% factor_labels)#1142张片子
+
+
+SXMII_clinical_M1 <- SXMII_Clinical[match(names(Vote_max_slides_SXMII),SXMII_Clinical$SZID),]
+SXMII_clinical_M1$os.event_new <- str_replace_all(SXMII_clinical_M1$os.event_new,"Deceased","1")
+SXMII_clinical_M1$os.event_new <- str_replace_all(SXMII_clinical_M1$os.event_new,"Living","0")
+SXMII_clinical_M1$os.event_new[which(SXMII_clinical_M1$os.event_new=="Loss to follow-up")] <- NA
+SXMII_clinical_M1 <- SXMII_clinical_M1[!is.na(SXMII_clinical_M1$os.event_new),]
+SXMII_clinical_M1$os.event_new <- as.numeric(SXMII_clinical_M1$os.event_new)
+Vote_max_slides_SXMII <- Vote_max_slides_SXMII[match(SXMII_clinical_M1$SZID,names(Vote_max_slides_SXMII))]
+
+labels <- factor(Vote_max_slides_SXMII)
+legend.labs <- as.vector(na.omit(unique(labels)))
+input <- as.data.frame( cbind(SXMII_clinical_M1$os.time_new/30,SXMII_clinical_M1$os.event_new))
+input$V1 <- as.numeric(input$V1)
+SXMII_OSP <- P_cal(clinical = input,labels=labels)
+
+SXMII_OS <- myplot(input,labels,ylab="Overall survival",font = "sans",
+                  risk.table = T,risk.table.ratio = 0.4,title = "SXM-II",
+                  legend.pos = c(0.65,0.18),xlab="Follow up",color=c("#00468BFF", "#ED0000FF", "#42B540FF", "#0099B4FF","black"))
+```
+
+```{r}
+#Figure 5E
+#SXMI——sankeyplot_patient_level
+library(ggalluvial)
+library(export)
+
+#final_predict <- read.csv("./SXMIpredict_patient_level.csv")
+#ture_label <- read.csv("./label4patients.csv")
+sankeydf <- data.frame(y_pred = final_predict$Vote_max_slides_SXMI, y_true = SXMI_Clinical$SNF)
+sankeydf <- sankeydf[complete.cases(sankeydf), ]
+sankeydf$y_pred <- paste("im-", sankeydf$y_pred, sep = "")
+
+colors <- c("#00468BFF", "#ED0000FF", "#42B540FF", "#0099B4FF")
+Sankey_patient <- ggplot(sankeydf,
+       aes(y =NULL,
+           axis1 = y_pred, axis2 = y_true))+
+  geom_alluvium(aes(fill = y_pred))+
+  geom_stratum() +
+ geom_text(stat = "stratum", aes(label = after_stat(stratum)),reverse = TRUE, size = 3,angle=2,discern = TRUE)+ #定义中间的文字
+  scale_x_continuous(breaks = 1:2, labels = c("IM_ECMS", "ECMS"))+
+  scale_fill_manual(values = colors) +
+  theme(legend.position = "none") +
+ ggtitle(" ")
+```
+
+
+```{r}
+#Figure 5F
+library(caret)
+library(ggplot2)
+sankeydf$y_true <- paste("im-ECMS", sankeydf$y_true, sep = "")
+
+confusion_matrix <- confusionMatrix(as.factor(sankeydf$y_pred), as.factor(sankeydf$y_true))
+
+print(confusion_matrix)
+
+cm_table <- as.table(confusion_matrix$table)
+
+cm_df <- as.data.frame(cm_table)
+colnames(cm_df) <- c("Prediction", "Reference", "FrSXMI")
+
+confusion <- ggplot(cm_df, aes(x = Reference, y = Prediction, fill = FrSXMI)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = FrSXMI), vjust = 1) +
+  scale_fill_gradient(low = "#B5E6D4", high = "#1B4242") +
+  theme_minimal() +
+  labs(title = "Confusion Matrix", x = "True Label", y = "Predicted Label") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
