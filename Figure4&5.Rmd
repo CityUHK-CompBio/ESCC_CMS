@@ -1,12 +1,12 @@
 ---
-title: "image_analysis"
+title: "image_analysis_for_imECMS_Fig4&5"
 author: "Yinghan"
 date: 
 output: html_document
 ---
 
 ```{r}
-#准备包和函数
+#Prepare packages and functions
 options(java.parameters = "-Xmx50g")
 library(bartMachine)
 library(doParallel)
@@ -18,7 +18,7 @@ library(ggplot2)
 library(cowplot)
 library(caret)
 library(ggalluvial)
-##计算p值的function
+#Function to calculate p-value
 P_cal <- function(clinical,labels){
             time <- clinical[, 1]
             event <- clinical[, 2] == 1
@@ -31,7 +31,7 @@ P_cal <- function(clinical,labels){
                                               1)
             return(survstats$p.value)
 }
-#OS_function
+#OS_KM_Plot_function
 myplot <- function (clinical, labels, limit = NULL, annot = NULL, color = NULL, 
   font = "Arial", xlab = "Follow up", ylab = "Survival Probability", 
   title = NULL, legend.pos = "top", palette = "jama_classic", 
@@ -127,6 +127,7 @@ myplot <- function (clinical, labels, limit = NULL, annot = NULL, color = NULL,
 ```{r}
 #Figure 4C
 
+#prepare_data(Image feature can be found in Supplementary Table)
 All_loc <- SXMI_loc_select
 
 distributionOfPatch<- sapply(1:length(All_loc),function(i){
@@ -167,7 +168,7 @@ ggplot(distriPlot, aes(x=class, y=num,fill=color,color=color)) +
 #install extraTrees and dummies if you don't have one
 #install.packages("./extraTrees_1.0.5.tar.gz", repos = NULL, type = "source")
 #install.packages("./dummies_1.5.6.tar.gz", repos = NULL, type = "source")
-##分析代表性不足的亚型&&筛选和新样本
+##Analysis of underrepresented subtypes && screening and new samples
 
 ntree <- 100
 mtry <- 2
@@ -186,11 +187,6 @@ Counts <- lapply(1:100,function(Times){
   testL <- Label4slides[-ind]
   rfout <- extraTrees::extraTrees(trainD, trainL, ntree=ntree,mtry = mtry, numRandomCuts = numRandomCuts,nodesize=nodesize,numThreads = 8)
   rfpred <- predict(rfout, testD) 
-  #内存管理---
-  rm(trainD)
-  rm(trainL)
-  rm(rfout)
-  #内存管理---
   tmp <- rfpred==testL
   names(tmp) <- rownames(testD)
   gc()
@@ -213,10 +209,9 @@ Label4slides_selected <- Label4slides[-ind_discard]
 temp1=as.data.frame(Label4slides_selected)
 
 Label4slides_frSXMI <- table(Label4slides)
-Label4slides_selected_frSXMI <- table(Label4slides_selected)
-represent_ratio <- Label4slides_selected_frSXMI / Label4slides_frSXMI
+Label4slides_selected_freq <- table(Label4slides_selected)
+represent_ratio <- Label4slides_selected_freq / Label4slides_freq
 
-# 代表性不足的类为4类
 print(represent_ratio)
 ```
 
@@ -226,9 +221,10 @@ print(represent_ratio)
 SXMI_tissueOmics_multi_loc[is.na(SXMI_tissueOmics_multi_loc)] <- 0
 
 load("./cmsLabel.rdata")
+## Manage Slide names
 names(all.cms.group) <- paste0("SZESCC",as.numeric(substr(names(all.cms.group),1,3))+680 ,sep="")
 SXMI_Clinical$SNF <- all.cms.group[match(SXMI_Clinical$IMID,names(all.cms.group))]
-SXMI_Clinical <- SXMI_Clinical[!is.na(SXMI_Clinical$SNF),]#ECMS分型信息
+SXMI_Clinical <- SXMI_Clinical[!is.na(SXMI_Clinical$SNF),]#ECMS Subtype
 
 Label4slides <- SXMI_Clinical$SNF[match(substr(rownames(SXMI_tissueOmics_multi_loc),1,9), SXMI_Clinical$IMID )]
 names(Label4slides) <- rownames(SXMI_tissueOmics_multi_loc)
@@ -322,10 +318,7 @@ plot_grid(lym_plot[[1]],tum_plot[[1]],ncol = 2,align = "hv")
 
 ```{r}
 #Figure5b
-rSXMIuire(pROC)
-rSXMIuire(ggplot2)
-library(doParallel)
-library(pROC)
+
 ########################################
 # glm.scores rf.scores glm.labels  rf.labels are vectors
 
@@ -346,9 +339,9 @@ roclist <- lapply(1:length(scores), function(i){
  dat.ci <- data.frame( x=NA, se.lower=NA, se.upper=NA, group = NA, y =NA, sp.lower = NA, sp.upper = NA )
  for(group_name in names(roclist)){
         registerDoParallel(10)
-        se.ciobj <- ci.se(roclist[[group_name]], specificities = sSXMI(0, 1, l = 100), boot.n = 2000, parallel = TRUE)
+        se.ciobj <- ci.se(roclist[[group_name]], specificities = seq(0, 1, l = 100), boot.n = 2000, parallel = TRUE)
         registerDoParallel(10)
-        sp.ciobj <- ci.sp(roclist[[group_name]], sensitivities = sSXMI(0, 1, l = 100), boot.n = 2000, parallel = TRUE)
+        sp.ciobj <- ci.sp(roclist[[group_name]], sensitivities = seq(0, 1, l = 100), boot.n = 2000, parallel = TRUE)
         dat.ci.tmp <- data.frame(x = as.numeric(rownames(se.ciobj)), se.lower = se.ciobj[, 1], se.upper = se.ciobj[, 3],  group = group_name, y = as.numeric(rownames(sp.ciobj)), sp.lower = sp.ciobj[, 1], sp.upper = se.ciobj[, 3] )
         dat.ci <- rbind(dat.ci, dat.ci.tmp)
 }
@@ -366,7 +359,7 @@ annot <- paste0(stringr::str_pad(names(roclist), max(sapply(names(roclist), ncha
 colors <- color
 names(colors) <- names(roclist)
 
-roc_curve <- pROC::ggroc(roclist, legacy.axes = TRUE, size=0.93) +  labs(x = "1 - Specificity", y = "Sensitivity") + scale_color_manual(labels = annot, values = colors ) + theme_classic() +  geom_abline(linetype = "dashed", alpha = 0.3) + coord_SXMIual() + geom_ribbon( data = dat.ci, inherit.aes = FALSE, show.legend = FALSE, aes(x = 1-x, xmin = 1-sp.upper, xmax = 1-sp.lower, y =y, ymin = se.lower, ymax = se.upper, group=group, fill=as.factor(group)), alpha = 0.1) + scale_fill_manual(values=colors) + theme(legend.title = element_blank()) 
+roc_curve <- pROC::ggroc(roclist, legacy.axes = TRUE, size=0.93) +  labs(x = "1 - Specificity", y = "Sensitivity") + scale_color_manual(labels = annot, values = colors ) + theme_classic() +  geom_abline(linetype = "dashed", alpha = 0.3) + coord_equal() + geom_ribbon( data = dat.ci, inherit.aes = FALSE, show.legend = FALSE, aes(x = 1-x, xmin = 1-sp.upper, xmax = 1-sp.lower, y =y, ymin = se.lower, ymax = se.upper, group=group, fill=as.factor(group)), alpha = 0.1) + scale_fill_manual(values=colors) + theme(legend.title = element_blank()) 
 
 ```
 
@@ -386,20 +379,20 @@ Pred_SXMI_core <- predict(final_model,merged_df)
 Names <- substr(rownames(SXMI_tissueOmics_multi_loc),1,9)
 uniqueName <- unique(Names)
 Vote_max_slides_SXMI <- list()
-frSXMIuency_table_list <- list()
+frequency_table_list <- list()
 
 for (xxx in uniqueName) {
-  ind <- which(Names == xxx)  # 找到匹配的索引
+  ind <- which(Names == xxx)  
   all_result <- Pred_SXMI[ind[1]:ind[length(ind)]]
-  frSXMIuency_table <- table(all_result)
-  frSXMIuency_table_list[[xxx]] <- frSXMIuency_table
-  if (sum(frSXMIuency_table == max(frSXMIuency_table)) >= 2) {
+  frequency_table <- table(all_result)
+  frequency_table_list[[xxx]] <- frequency_table
+  if (sum(frequency_table == max(frequency_table)) >= 2) {
     back <- NA
   }else {
-    most_frSXMIuent_element <- names(frSXMIuency_table)[which.max(frSXMIuency_table)]
-    back <- most_frSXMIuent_element
+    most_frequent_element <- names(frequency_table)[which.max(frequency_table)]
+    back <- most_frequent_element
   }
-  if (frSXMIuency_table[which.max(frSXMIuency_table)] != length(ind) && frSXMIuency_table[4] > 0) {
+  if (frequency_table[which.max(frequency_table)] != length(ind) && frequency_table[4] > 0) {
     back <- "ECMS4"
   }
   Vote_max_slides_SXMI[[xxx]] <- back  # 将结果存储在列表中
@@ -431,25 +424,26 @@ xtest_SXMII<- SXMII_tissueOmics_multi_loc[,colnames(SXMI_tissueOmics_multi_loc)]
 xtest_SXMII <- scale(xtest_SXMII)
 Pred_SXMII <- predict(rfout,xtest_SXMII)
 pred_SXMII_prob <- predict(rfout,xtest_SXMII, probability=TRUE)
-# major vote for each patient6
+
+# major vote for each patien
 Names_SXMII <- substr(rownames(SXMII_tissueOmics_multi_loc),1,9)
 uniqueName_SXMII <- unique(Names_SXMII)
 rm(xtest_SXMII)
 
 for (xxx in uniqueName_SXMII) {
-  ind <- which(Names_SXMII == xxx)  # 找到匹配的索引
+  ind <- which(Names_SXMII == xxx)  
   all_result <- Pred_SXMII[ind[1]:ind[length(ind)]]
-  frSXMIuency_table <- table(all_result)
-  if (sum(frSXMIuency_table == max(frSXMIuency_table)) >= 2) {
+  frequency_table <- table(all_result)
+  if (sum(frequency_table == max(frequency_table)) >= 2) {
     back <- NA
   }else {
-    most_frSXMIuent_element <- names(frSXMIuency_table)[which.max(frSXMIuency_table)]
-    back <- most_frSXMIuent_element
+    most_frequent_element <- names(frequency_table)[which.max(frequency_table)]
+    back <- most_frequent_element
   }
-  if (frSXMIuency_table[which.max(frSXMIuency_table)] != length(ind) && frSXMIuency_table[4] > 0) {
+  if (frequency_table[which.max(frequency_table)] != length(ind) && frequency_table[4] > 0) {
     back <- "ECMS4"
   }
-  Vote_max_slides_SXMII[[xxx]] <- back  # 将结果存储在列表中
+  Vote_max_slides_SXMII[[xxx]] <- back
 }
 
 SXMII_Clinical <- dataframeC
@@ -500,7 +494,7 @@ Sankey_patient <- ggplot(sankeydf,
            axis1 = y_pred, axis2 = y_true))+
   geom_alluvium(aes(fill = y_pred))+
   geom_stratum() +
- geom_text(stat = "stratum", aes(label = after_stat(stratum)),reverse = TRUE, size = 3,angle=2,discern = TRUE)+ #定义中间的文字
+ geom_text(stat = "stratum", aes(label = after_stat(stratum)),reverse = TRUE, size = 3,angle=2,discern = TRUE)+
   scale_x_continuous(breaks = 1:2, labels = c("IM_ECMS", "ECMS"))+
   scale_fill_manual(values = colors) +
   theme(legend.position = "none") +
@@ -521,11 +515,11 @@ print(confusion_matrix)
 cm_table <- as.table(confusion_matrix$table)
 
 cm_df <- as.data.frame(cm_table)
-colnames(cm_df) <- c("Prediction", "Reference", "FrSXMI")
+colnames(cm_df) <- c("Prediction", "Reference", "Freq")
 
 confusion <- ggplot(cm_df, aes(x = Reference, y = Prediction, fill = FrSXMI)) +
   geom_tile(color = "white") +
-  geom_text(aes(label = FrSXMI), vjust = 1) +
+  geom_text(aes(label = Freq), vjust = 1) +
   scale_fill_gradient(low = "#B5E6D4", high = "#1B4242") +
   theme_minimal() +
   labs(title = "Confusion Matrix", x = "True Label", y = "Predicted Label") +
