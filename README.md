@@ -5,4 +5,4 @@ The repository contains the construction of ECMS and the implementation of a use
 ![image](ECMS_2024.png)
 ## 1.Omics analysis（ECMS)
 
-## 2.Image Classifier(imECMS)
+## 2.Image Classifier (imECMS)
