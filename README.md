@@ -9,57 +9,57 @@ The repository contains the construction of ECMS and the implementation of a use
 ## 2.Image Classifier (imECMS)
 The imECMS.Rmd provides the code for imECMS classifier.
 
+How to Use:
+	•	Replace trained_model, user_tissue_features, and clinical_data with actual input data and model variables.
+ 
 ```r
-#load("./rst_final_model.rdata")
-xtest <- SXMI_tissueOmics_multi_loc
-Pred_SXMI <- predict(final_model,xtest)
-pred_SXMI_prob <- predict(final_model,xtest, probability=TRUE)
+# Load the trained model
+# load("./final_trained_model.rdata")  # Replace with the path to your model file
 
-merged_df <- merge(temp1, SXMI_tissueOmics_multi_loc, by = "row.names", all = FALSE)
-merged_df <- merged_df[, -c(1,2)]
-Pred_SXMI_core <- predict(final_model,merged_df)
+# Predict results using the test dataset
+test_data <- user_tissue_features  # Input user tissue feature data
+prediction_results <- predict(trained_model, test_data)  # Obtain predicted labels
+prediction_probabilities <- predict(trained_model, test_data, probability = TRUE)  # Obtain probabilities
 
-Names <- substr(rownames(SXMI_tissueOmics_multi_loc),1,9)
-uniqueName <- unique(Names)
-Vote_max_slides_SXMI <- list()
-frequency_table_list <- list()
+# Predict results for core samples
+merged_data <- merge(user_core_samples, test_data, by = "row.names", all = FALSE)  # Merge core sample data
+merged_data <- merged_data[, -c(1,2)]  # Remove unnecessary columns
+core_predictions <- predict(trained_model, merged_data)  # Predict core samples
 
-for (xxx in uniqueName) {
-  ind <- which(Names == xxx)  
-  all_result <- Pred_SXMI[ind[1]:ind[length(ind)]]
-  frequency_table <- table(all_result)
-  frequency_table_list[[xxx]] <- frequency_table
-  if (sum(frequency_table == max(frequency_table)) >= 2) {
-    back <- NA
-  }else {
-    most_frequent_element <- names(frequency_table)[which.max(frequency_table)]
-    back <- most_frequent_element
+# Majority voting based on patient IDs
+sample_names <- substr(rownames(test_data), 1, 9)  # Extract sample IDs
+unique_patient_ids <- unique(sample_names)  # Get unique patient IDs
+voting_results <- list()  # Initialize a list to store voting results
+frequency_tables <- list()  # Initialize a list to store frequency tables
+
+for (patient_id in unique_patient_ids) {
+  indices <- which(sample_names == patient_id)  # Get indices for the current patient
+  patient_predictions <- prediction_results[indices[1]:indices[length(indices)]]  # Collect all predictions for the patient
+  freq_table <- table(patient_predictions)  # Count the frequency of each prediction
+  frequency_tables[[patient_id]] <- freq_table  # Store frequency table
+  
+  # Majority voting: determine the most frequent label
+  if (sum(freq_table == max(freq_table)) >= 2) {
+    final_result <- NA  # If there is a tie, set result as NA
+  } else {
+    final_result <- names(freq_table)[which.max(freq_table)]  # Assign the most frequent label
   }
-  if (frequency_table[which.max(frequency_table)] != length(ind) && frequency_table[4] > 0) {
-    back <- "ECMS4"
+  
+  # Special condition: if ECMS4 is present but not all votes agree, set the result to "ECMS4"
+  if (freq_table[which.max(freq_table)] != length(indices) && freq_table[4] > 0) {
+    final_result <- "ECMS4"
   }
-  Vote_max_slides_SXMI[[xxx]] <- back  # 将结果存储在列表中
+  
+  voting_results[[patient_id]] <- final_result  # Store the final result
 }
 
-names(Vote_max_slides_SXMI) <- uniqueName
-Vote_max_slides_SXMI <- do.call(c,Vote_max_slides_SXMI)
+names(voting_results) <- unique_patient_ids  # Assign names to voting results
+voting_results <- do.call(c, voting_results)  # Combine results into a single vector
 
-Vote_max_slides_SXMI <- Vote_max_slides_SXMI[match(SXMI_Clinical$IMID,names(Vote_max_slides_SXMI))]
-test=as.data.frame(Vote_max_slides_SXMI)
-labels <- factor(Vote_max_slides_SXMI)
-legend.labs <- as.vector(na.omit(unique(labels)))
-
-input <- as.data.frame(cbind(SXMI_Clinical$os.time/30,SXMI_Clinical$os.event)) 
-input$V1 <- as.numeric(input$V1)
-input$V1 <- as.numeric(input$V1)
-SXMI_OS <- myplot(input,labels,ylab="Overall survival",font = "sans",
-                  risk.table = T,risk.table.ratio = 0.4,title = "SXM-I",
-                  legend.pos = c(0.65,0.18),xlab="Follow up",color=c("#00468BFF", "#ED0000FF", "#42B540FF", "#0099B4FF","black"))
-
-input <- as.data.frame( cbind(SXMI_Clinical$rfs.time/30,SXMI_Clinical$rfs.event)) 
-input$V1 <- as.numeric(input$V1)
-SXMI_DFS <- myplot(input,labels,ylab="Disease-free survival",font = "sans",
-                  risk.table = T,risk.table.ratio = 0.4,title = "SXM-I",
-                  legend.pos = c(0.65,0.18),xlab="Follow up",color=c("#00468BFF", "#ED0000FF", "#42B540FF", "#0099B4FF"))
+# Match predictions with clinical data
+voting_results <- voting_results[match(clinical_data$Patient_ID, names(voting_results))]
+final_results_df <- as.data.frame(voting_results)  # Convert results to a data frame
+print(final_results_df)
 ```
+
 Author(Zhu Zhongxu, Zhang Yinghan)
