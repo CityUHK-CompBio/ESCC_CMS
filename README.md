@@ -9,8 +9,11 @@ The repository contains the construction of ECMS and the implementation of a use
 ## 2.Image Classifier (imECMS)
 The imECMS.Rmd provides the code for imECMS classifier.
 
-How to Use:
-	•Replace trained_model, user_tissue_features, and clinical_data with actual input data and model variables.You can find all the code for subsequent OS and DFS analysis in imECMS.Rmd, and all the features we used for analysis in Supplementary Table S12 of the paper.
+### How to Use:
+
+Replace trained_model, user_tissue_features, and clinical_data with actual input data and model variables.
+
+You can find all the code for subsequent OS and DFS analysis in imECMS.Rmd, and all the features we used for analysis in Supplementary Table S12 of the paper.
  
 ```r
 # Load the trained model
