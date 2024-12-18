@@ -3,6 +3,6 @@ Esophageal squamous cell carcinoma (ESCC) lacks a standardized classification.  
 The repository contains the construction of ECMS and the implementation of a user-friendly image classifier(imECMS), including all the code required for generating figures for publication. 
 
 ![image](ECMS_2024.png)
-1.*****（
+## 1.Omics analysis（ECMS)
 
-2.*****
+## 2.Image Classifier(imECMS)
