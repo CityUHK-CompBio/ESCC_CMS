@@ -7,6 +7,50 @@ The repository contains the construction of ECMS and the implementation of a use
 ![image](ECMS_2024.png)
 ## 1.ESCC Consensus Molecular Subtypes（ECMS) Classifier
 
+We built a gene expression data-based classifier for ECMSs prediction. 
+
+### Example: TCGA-ESCC, GSE53625 and GSE45670 prediction
+
+Our study used the TCGA-ESCC, GSE53625, and GSE45670 datasets. Here, we show how to obtain ECMS label using our gene expression classifier.
+
+```{r}
+load("./ECMS.model.rdata")
+
+##### TCGA
+tcga.predict = predict(rf.cl, tcga.val.df)
+table(tcga.predict)
+
+##### GSE53625
+gse53625.predict = predict(rf.cl, gse53625.val.df)
+table(gse53625.predict)
+
+##### GSE45670
+gse45670.predict = predict(rf.cl, gse45670.val.df)
+table(gse45670.predict)
+```
+
+### Assign patient to ECMSs
+
+If you have your own data, pls prepare a scaled expression matrix first. 
+
+```{r}
+# check features used in our model
+gene.features
+
+# prepare data.frame
+# suppose expr.df is a gene expression matrix.
+pre.df = expr.df[gene.features,]
+
+# transpose
+pre.df = t(pre.df)
+
+# nomarlization: features are required to be normalized by Z score
+pre.df = scale(pre.df)
+
+# prediction
+predict(rf.cl, pre.df)
+```
+
 ## 2.Image Classifier (imECMS)
 The imECMS.Rmd provides the code for imECMS classifier.
 
