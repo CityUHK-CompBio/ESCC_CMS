@@ -121,45 +121,18 @@ myplot <- function (clinical, labels, limit = NULL, annot = NULL, color = NULL,
   }
   else return(p$plot)
 }
+
+source("./distri_barplot.R")
 ```
 
 
 ```{r}
-#Figure 4C
-
-#prepare_data(Image feature can be found in Supplementary Table)
-All_loc <- SXMI_loc_select
-
-distributionOfPatch<- sapply(1:length(All_loc),function(i){
-  mat <- All_loc[[i]]
-  tmp <- c(length(which(mat==1)),length(which(mat==2)),length(which(mat==3)),length(which(mat==4)),length(which(mat==5)),
-           length(which(mat==6)),length(which(mat==7)),length(which(mat==8)) )
-  return(tmp)
-})
-
-rownames(distributionOfPatch) <-c('back','con', 'epi', 'gla', 'lym', 'mus', 'str', 'tum')
-
-colnames(distributionOfPatch) <- names(All_loc)
-
-totalnum <- colSums(distributionOfPatch)
-distributionOfPatch_ratio <- t(t(distributionOfPatch)/totalnum)
-
-distriPlot <- data.frame(num=c(t(distributionOfPatch_ratio)))
-distriPlot$class <- rep(c('BACK', 'CON', 'EPI', 'GLA', 'LYM', 'MUS', 'STR', 'TUM'),each=ncol(distributionOfPatch_ratio))
-distriPlot$color <- factor(rep(c(1:8),each=ncol(distributionOfPatch_ratio)),) 
-
-ggplot(distriPlot, aes(x=class, y=num,fill=color,color=color)) + 
-  geom_boxplot(notch=T,notchwidth = 0.6,width = 0.6,lwd=1.5)+ # 
-  stat_boxplot(geom ='errorbar',width = 0.4)+
-  labs(title="", x="", y="")+   
-  theme(axis.title.x = element_text(size = 15,family ="serif"),axis.title.y = element_text(size = 15,family ="serif"),
-        plot.title = element_text( color="black", size=15,face="plain",hjust = 0.5,family ="serif"),
-        axis.text.x = element_text(size=15,family ="serif"),axis.text.y = element_text(size=15,family ="serif"),axis.ticks = element_blank(),
-        legend.position="none",
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
-  scale_fill_manual(values=c("#1974d2","#696969","#FFA343","NavajoWhite","#C364C5","#CD5C5C","#4682B4","#1CAC78"))+ # ,"#1974d2"
-  scale_color_manual(values=c("#1974d2","#696969","#FFA343","NavajoWhite","#C364C5","#CD5C5C","#4682B4","#1CAC78"))
+load("./core_sample.rdata")
+load("./SXMI_Clinical.rdata")
+load("./SXMI_SOFs.rdata")
+load("./label4slide.rdata")
+load("./roc_scores.rdata")
+load("./label4slide_coresample.rdata")
 ```
 
 
@@ -175,16 +148,13 @@ mtry <- 2
 numRandomCuts <- 2
 nodesize <- 2
 
-#load("./SXMI_sample.rdata")
-Label4slides <- factor(Label4slides,levels = c(1,2,3,4),
-                                       labels = c("ECMS1","ECMS2","ECMS3","ECMS4"))
 Counts <- lapply(1:100,function(Times){
   set.seed(Times)
-  ind <- sample(1:nrow(SXMI_tissueOmics_multi_loc_004),ceiling(0.9*nrow(SXMI_tissueOmics_multi_loc_004)),replace = FALSE)
-  trainD <- SXMI_tissueOmics_multi_loc_004[ind,]
-  trainL <- Label4slides[ind]
-  testD <- SXMI_tissueOmics_multi_loc_004[-ind,]
-  testL <- Label4slides[-ind]
+  ind <- sample(1:nrow(SXM_I_coreSOFs),ceiling(0.9*nrow(SXM_I_coreSOFs)),replace = FALSE)
+  trainD <- SXM_I_coreSOFs[ind,]
+  trainL <- Label4slides_coresample[ind]
+  testD <- SXM_I_coreSOFs[-ind,]
+  testL <- Label4slides_coresample[-ind]
   rfout <- extraTrees::extraTrees(trainD, trainL, ntree=ntree,mtry = mtry, numRandomCuts = numRandomCuts,nodesize=nodesize,numThreads = 8)
   rfpred <- predict(rfout, testD) 
   tmp <- rfpred==testL
@@ -194,54 +164,196 @@ Counts <- lapply(1:100,function(Times){
 })
 
 Counts <- do.call(c,Counts)
-gc()
+
 uniqueNames <- unique(names(Counts))
+
 ratio <- sapply(uniqueNames, function(xxx){
   tmp <- which(names(Counts)==xxx)
   tmp_ratio <- mean(Counts[tmp])
   return(tmp_ratio)
 })
 
-ratio <- ratio[match(names(Label4slides),names(ratio))]
+ratio <- ratio[match(names(Label4slides_coresample),names(ratio))] # !!!!!!
 ind_discard <- which(ratio<=0.1)
 
-Label4slides_selected <- Label4slides[-ind_discard]
-temp1=as.data.frame(Label4slides_selected)
+Label4slides_coresample_selected <- Label4slides_coresample[-ind_discard]
+temp1=as.data.frame(Label4slides_coresample_selected)
 
-Label4slides_frSXMI <- table(Label4slides)
-Label4slides_selected_freq <- table(Label4slides_selected)
-represent_ratio <- Label4slides_selected_freq / Label4slides_freq
+Label4slides_coresample_freq <- table(Label4slides_coresample)
+Label4slides_coresample_selected_freq <- table(Label4slides_coresample_selected)
+represent_ratio <- Label4slides_coresample_selected_freq / Label4slides_coresample_freq
 
 print(represent_ratio)
+
+SXM_I_coreSOFs <- SXM_I_coreSOFs[-ind_discard,]
+
+Names <- substr(rownames(SXM_I_coreSOFs),3,9)
+uniqueName <- unique(Names)
 ```
+
+```{r}
+All_100 <- sapply(1:100, function(xxx){
+  rfpredBB <- Label4slides_selected
+  prob = matrix(nrow = length(Label4slides_selected), ncol = 4)
+  index = rep(1:10, nrow(SXM_I_coreSOFs))
+  ind = index[1:nrow(SXM_I_coreSOFs)]
+  # seed <- sample(1:100000,1)
+  # set.seed(seed)
+  ind <- sample(ind) # suffle 
+  
+  for (k in 1:10) {
+    xcal <- SXM_I_coreSOFs[ind != k, ] 
+    ycal <- Label4slides_selected[ind != k]
+    xtest <- SXM_I_coreSOFs[ind == k, ] 
+    ytest <- Label4slides_selected[ind == k]   
+    train_df <- cbind(xcal,ycal)
+    rfout <- extraTrees::extraTrees(xcal, ycal, ntree=ntree,mtry = mtry, numRandomCuts = numRandomCuts,nodesize=nodesize) # 
+   
+    rfpredBB[ind == k] = predict(rfout, xtest) 
+    prob[ind == k, ] = predict(rfout, xtest, probability = TRUE)
+  }
+  res <- table(rfpredBB,Label4slides_selected)
+  ACC = sum(diag(res))/length(Label4slides_selected)
+  true_label <- dummies::dummy(Label4slides_selected) # true label
+  true_label <- data.frame(true_label)
+  colnames(true_label) <- paste(colnames(true_label), "_true")
+  pre <- prob
+  colnames(pre) <- str_replace(colnames(true_label),"_true","_pred_RF")
+  final_df <- cbind(true_label, pre)
+  roc_res <- multiROC::multi_roc(final_df, force_diag=T)
+  AUC_each <- as.numeric(unlist(roc_res$AUC))
+  AUC_each <- round(AUC_each,digits = 3)
+  return(c(ACC,AUC_each))
+})
+All_100 <- t(All_100)
+colnames(All_100) <- c("ACC","Class1","Class2","Class3","Class4","macro","micro")
+
+aa <- All_100[,-1]
+aa <- reshape2::melt(aa)
+colnames(aa) <- c("sample","group","AUC")
+AA <- ggplot(aa, aes(x=group, y=AUC,color=group)) + 
+  geom_boxplot()+
+  geom_jitter(shape=16, position=position_jitter(0.2))+
+  scale_color_manual(values=c("#00468BFF","#ED0000FF","#42B540FF","#0099B4FF","dimgray","gray"))+
+  ylim(c(0.0,1))+
+  geom_hline(yintercept = 0.8,color="red",linetype="dashed",size=1)
+AA
+```
+```{r}
+result_list <- list()
+
+for (xxx in 1:100) {
+  rfpredBB <- Label4slides_selected
+  prob <- matrix(nrow = length(Label4slides_selected), ncol = 4)
+  index <- rep(1:10, nrow(SXM_I_coreSOFs))
+  ind <- index[1:nrow(SXM_I_coreSOFs)]
+  ind <- sample(ind)  # suffle 
+  
+  for (k in 1:10) {
+    xcal <- SXM_I_coreSOFs[ind != k, ] 
+    ycal <- Label4slides_selected[ind != k]
+    xtest <- SXM_I_coreSOFs[ind == k, ] 
+    ytest <- Label4slides_selected[ind == k]   
+    train_df <- cbind(xcal, ycal)
+    rfout <- extraTrees::extraTrees(xcal, ycal, ntree = ntree, mtry = mtry, numRandomCuts = numRandomCuts, nodesize = nodesize)
+   
+    rfpredBB[ind == k] <- predict(rfout, xtest) 
+    prob[ind == k, ] <- predict(rfout, xtest, probability = TRUE)
+  }
+  
+  true_label <- dummies::dummy(Label4slides_selected)  # true label
+  true_label <- data.frame(true_label)
+  colnames(true_label) <- paste(colnames(true_label), "_true")
+  pre <- prob
+  colnames(pre) <- str_replace(colnames(true_label), "_true", "_pred_RF")
+  final_df <- cbind(true_label, pre)
+  
+  # Store each column as a vector
+  result_list[[xxx]] <- list(
+    Class1_true = final_df$`Label4slides_selectedECMS1 _true`,
+    Class2_true = final_df$`Label4slides_selectedECMS2 _true`,
+    Class3_true = final_df$`Label4slides_selectedECMS3 _true`,
+    Class4_true = final_df$`Label4slides_selectedECMS4 _true`,
+    Class1_pred_RF = final_df$`Label4slides_selectedECMS1 _pred_RF`,
+    Class2_pred_RF = final_df$`Label4slides_selectedECMS2 _pred_RF`,
+    Class3_pred_RF = final_df$`Label4slides_selectedECMS3 _pred_RF`,
+    Class4_pred_RF = final_df$`Label4slides_selectedECMS4 _pred_RF`
+  )
+}
+
+# Extract each vector from the result list
+ECMS1.labels <- sapply(result_list, function(x) x$Class1_true)
+ECMS2.labels <- sapply(result_list, function(x) x$Class2_true)
+ECMS3.labels <- sapply(result_list, function(x) x$Class3_true)
+ECMS4.labels <- sapply(result_list, function(x) x$Class4_true)
+
+ECMS1.scores <- sapply(result_list, function(x) x$Class1_pred_RF)
+ECMS2.scores <- sapply(result_list, function(x) x$Class2_pred_RF)
+ECMS3.scores <- sapply(result_list, function(x) x$Class3_pred_RF)
+ECMS4.scores <- sapply(result_list, function(x) x$Class4_pred_RF)
+
+ECMS1.labels <- c(ECMS1.labels)
+ECMS2.labels <- c(ECMS2.labels)
+ECMS3.labels <- c(ECMS3.labels)
+ECMS4.labels <- c(ECMS4.labels)
+
+ECMS1.scores <- c(ECMS1.scores)
+ECMS2.scores <- c(ECMS2.scores)
+ECMS3.scores <- c(ECMS3.scores)
+ECMS4.scores <- c(ECMS4.scores)
+```
+
+```{r}
+require(pROC)
+require(ggplot2)
+library(doParallel)
+library(pROC)
+scores = list(ECMS1 = ECMS1.scores, ECMS2 = ECMS2.scores,ECMS3 = ECMS3.scores, ECMS4 = ECMS4.scores)
+labels = list(ECMS1 = ECMS1.labels, ECMS2 = ECMS2.labels,ECMS3 = ECMS3.labels, ECMS4 = ECMS4.labels)
+# roc line colors. e.g. if two rocs. color = c("black","red")
+color = c("#00468BFF","#ED0000FF","#42B540FF","#0099B4FF")
+########################################
+
+set.seed(100)
+roclist <- lapply(1:length(scores), function(i){
+      index <- !is.na(scores[[i]])
+      pROC::roc(labels[[i]][index], scores[[i]][index])
+ })
+ names(roclist) <- names(scores)
+ dat.ci <- data.frame( x=NA, se.lower=NA, se.upper=NA, group = NA, y =NA, sp.lower = NA, sp.upper = NA )
+ for(group_name in names(roclist)){
+        registerDoParallel(10)
+        se.ciobj <- ci.se(roclist[[group_name]], specificities = seq(0, 1, l = 100), boot.n = 2000, parallel = TRUE)
+        registerDoParallel(10)
+        sp.ciobj <- ci.sp(roclist[[group_name]], sensitivities = seq(0, 1, l = 100), boot.n = 2000, parallel = TRUE)
+        dat.ci.tmp <- data.frame(x = as.numeric(rownames(se.ciobj)), se.lower = se.ciobj[, 1], se.upper = se.ciobj[, 3],  group = group_name, y = as.numeric(rownames(sp.ciobj)), sp.lower = sp.ciobj[, 1], sp.upper = se.ciobj[, 3] )
+        dat.ci <- rbind(dat.ci, dat.ci.tmp)
+}
+dat.ci <- dat.ci[-c(1),]
+annot <- c()
+aucs <- c()
+for(group_name in names(roclist)){
+    auc <- pROC::ci(roclist[[group_name]])[c(2, 1, 3)]
+    others <- pROC::coords(roclist[[group_name]], "best", ret = c("sensitivity", "specificity"), best.policy = "omit")
+
+    annot <- c(annot, sprintf("%.2f (%.2f-%.2f)", auc[1], auc[2], auc[3])  ) # 常用，AUC CI 
+    aucs <- c(aucs, auc[1])
+}
+annot <- paste0(stringr::str_pad(names(roclist), max(sapply(names(roclist), nchar))+1, "right"), "\t", annot)
+colors <- color
+names(colors) <- names(roclist)
+
+roc_curve=pROC::ggroc(roclist, legacy.axes = TRUE, size=0.93) +  labs(x = "1 - Specificity", y = "Sensitivity") + scale_color_manual(labels = annot, values = colors ) + theme_classic() +  geom_abline(linetype = "dashed", alpha = 0.3) + coord_equal() + geom_ribbon( data = dat.ci, inherit.aes = FALSE, show.legend = FALSE, aes(x = 1-x, xmin = 1-sp.upper, xmax = 1-sp.lower, y =y, ymin = se.lower, ymax = se.upper, group=group, fill=as.factor(group)), alpha = 0.1) + scale_fill_manual(values=colors) + theme(legend.title = element_blank()) 
+
+roc_curve
+```
+
 
 ```{r}
 #Figure 4D
 
-SXMI_tissueOmics_multi_loc[is.na(SXMI_tissueOmics_multi_loc)] <- 0
-
-load("./cmsLabel.rdata")
-## Manage Slide names
-names(all.cms.group) <- paste0("SZESCC",as.numeric(substr(names(all.cms.group),1,3))+680 ,sep="")
-SXMI_Clinical$SNF <- all.cms.group[match(SXMI_Clinical$IMID,names(all.cms.group))]
-SXMI_Clinical <- SXMI_Clinical[!is.na(SXMI_Clinical$SNF),]#ECMS Subtype
-
-Label4slides <- SXMI_Clinical$SNF[match(substr(rownames(SXMI_tissueOmics_multi_loc),1,9), SXMI_Clinical$IMID )]
-names(Label4slides) <- rownames(SXMI_tissueOmics_multi_loc)
-Label4slides <- stringr::str_replace_all(Label4slides,"ECMS","")
-
-SXMI_tissueOmics_multi_loc <- SXMI_tissueOmics_multi_loc[!is.na(Label4slides),]
-Label4slides <- Label4slides[!is.na(Label4slides)]
-all.SXMIual(rownames(SXMI_tissueOmics_multi_loc), names(Label4slides) )
-
-m1 <- apply(SXMI_tissueOmics_multi_loc,2,mad)
-SXMI_tissueOmics_multi_loc<-SXMI_tissueOmics_multi_loc[,which(m1>0)]
-
-# scale
-SXMI_tissueOmics_multi_loc <- as.data.frame((SXMI_tissueOmics_multi_loc))
-
 # barplot
-Matrix <- SXMI_tissueOmics_multi_loc
+Matrix <- SXMI_SOFs
 Matrix$Subtype <- Label4slides
 index1 <- which(Label4slides== "1")
 index2 <- which(Label4slides== "2")
@@ -317,67 +429,18 @@ plot_grid(lym_plot[[1]],tum_plot[[1]],ncol = 2,align = "hv")
 
 
 ```{r}
-#Figure5b
-
-########################################
-# glm.scores rf.scores glm.labels  rf.labels are vectors
-
-#save(scores, file = "./scores.rdata")
-#save(labels, file = "./scores.rdata")
-load("./scores.rdata")
-load("./scores.rdata")
-# roc line colors. e.g. if two rocs. color = c("black","red")
-color <- c("#00468BFF","#ED0000FF","#42B540FF","#0099B4FF")
-########################################
-
-set.seed(100)
-roclist <- lapply(1:length(scores), function(i){
-      index <- !is.na(scores[[i]])
-      pROC::roc(labels[[i]][index], scores[[i]][index])
- })
- names(roclist) <- names(scores)
- dat.ci <- data.frame( x=NA, se.lower=NA, se.upper=NA, group = NA, y =NA, sp.lower = NA, sp.upper = NA )
- for(group_name in names(roclist)){
-        registerDoParallel(10)
-        se.ciobj <- ci.se(roclist[[group_name]], specificities = seq(0, 1, l = 100), boot.n = 2000, parallel = TRUE)
-        registerDoParallel(10)
-        sp.ciobj <- ci.sp(roclist[[group_name]], sensitivities = seq(0, 1, l = 100), boot.n = 2000, parallel = TRUE)
-        dat.ci.tmp <- data.frame(x = as.numeric(rownames(se.ciobj)), se.lower = se.ciobj[, 1], se.upper = se.ciobj[, 3],  group = group_name, y = as.numeric(rownames(sp.ciobj)), sp.lower = sp.ciobj[, 1], sp.upper = se.ciobj[, 3] )
-        dat.ci <- rbind(dat.ci, dat.ci.tmp)
-}
-dat.ci <- dat.ci[-c(1),]
-annot <- c()
-aucs <- c()
-for(group_name in names(roclist)){
-    auc <- pROC::ci(roclist[[group_name]])[c(2, 1, 3)]
-    others <- pROC::coords(roclist[[group_name]], "best", ret = c("sensitivity", "specificity"), best.policy = "omit")
-
-    annot <- c(annot, sprintf("%.2f (%.2f-%.2f)", auc[1], auc[2], auc[3])  ) # 常用，AUC CI 
-    aucs <- c(aucs, auc[1])
-}
-annot <- paste0(stringr::str_pad(names(roclist), max(sapply(names(roclist), nchar))+1, "right"), "\t", annot)
-colors <- color
-names(colors) <- names(roclist)
-
-roc_curve <- pROC::ggroc(roclist, legacy.axes = TRUE, size=0.93) +  labs(x = "1 - Specificity", y = "Sensitivity") + scale_color_manual(labels = annot, values = colors ) + theme_classic() +  geom_abline(linetype = "dashed", alpha = 0.3) + coord_equal() + geom_ribbon( data = dat.ci, inherit.aes = FALSE, show.legend = FALSE, aes(x = 1-x, xmin = 1-sp.upper, xmax = 1-sp.lower, y =y, ymin = se.lower, ymax = se.upper, group=group, fill=as.factor(group)), alpha = 0.1) + scale_fill_manual(values=colors) + theme(legend.title = element_blank()) 
-
-```
-
-```{r}
 #Figure 5 C&D&G
-#load("./rst_final_model.rdata")
-#seed <- 738
-#set.seed(seed)
-xtest <- SXMI_tissueOmics_multi_loc
+load("./rst_final_model.rdata")
+load("./SXMI_SOFs_310.rdata")
+xtest <- SXMI_SOFs_310
 Pred_SXMI <- predict(final_model,xtest)
 pred_SXMI_prob <- predict(final_model,xtest, probability=TRUE)
 
-merged_df <- merge(temp1, SXMI_tissueOmics_multi_loc, by = "row.names", all = FALSE)
-merged_df <- merged_df[, -c(1,2)]
-Pred_SXMI_core <- predict(final_model,merged_df)
 
-Names <- substr(rownames(SXMI_tissueOmics_multi_loc),1,9)
+Names <- substr(rownames(SXMI_SOFs_310),3,9)
 uniqueName <- unique(Names)
+
+
 Vote_max_slides_SXMI <- list()
 frequency_table_list <- list()
 
@@ -406,29 +469,33 @@ test=as.data.frame(Vote_max_slides_SXMI)
 labels <- factor(Vote_max_slides_SXMI)
 legend.labs <- as.vector(na.omit(unique(labels)))
 
-input <- as.data.frame(cbind(SXMI_Clinical$os.time/30,SXMI_Clinical$os.event)) 
+input <- as.data.frame(cbind(SXMI_Clinical$OS_Time/30,SXMI_Clinical$OS_Event)) 
 input$V1 <- as.numeric(input$V1)
 input$V1 <- as.numeric(input$V1)
 SXMI_OS <- myplot(input,labels,ylab="Overall survival",font = "sans",
                   risk.table = T,risk.table.ratio = 0.4,title = "SXM-I",
                   legend.pos = c(0.65,0.18),xlab="Follow up",color=c("#00468BFF", "#ED0000FF", "#42B540FF", "#0099B4FF","black"))
 
-input <- as.data.frame( cbind(SXMI_Clinical$rfs.time/30,SXMI_Clinical$rfs.event)) 
+input <- as.data.frame( cbind(SXMI_Clinical$RFS_Time/30,SXMI_Clinical$RFS_Event)) 
 input$V1 <- as.numeric(input$V1)
 SXMI_DFS <- myplot(input,labels,ylab="Disease-free survival",font = "sans",
                   risk.table = T,risk.table.ratio = 0.4,title = "SXM-I",
                   legend.pos = c(0.65,0.18),xlab="Follow up",color=c("#00468BFF", "#ED0000FF", "#42B540FF", "#0099B4FF"))
+
 #Figure 5g
+# 选择所需的列
+load("./SXMII_Clinical.rdata")
+load("./SXMII_SOFs.rdata")
+# 保存为 .rdata 文件
 Vote_max_slides_SXMII <- list()
-xtest_SXMII<- SXMII_tissueOmics_multi_loc[,colnames(SXMI_tissueOmics_multi_loc)]
+xtest_SXMII<- SXMII_SOFs[,colnames(SXMI_SOFs_310)]
 xtest_SXMII <- scale(xtest_SXMII)
 Pred_SXMII <- predict(rfout,xtest_SXMII)
 pred_SXMII_prob <- predict(rfout,xtest_SXMII, probability=TRUE)
 
 # major vote for each patien
-Names_SXMII <- substr(rownames(SXMII_tissueOmics_multi_loc),1,9)
+Names_SXMII <- substr(rownames(SXMII_SOFs),3,9)
 uniqueName_SXMII <- unique(Names_SXMII)
-rm(xtest_SXMII)
 
 for (xxx in uniqueName_SXMII) {
   ind <- which(Names_SXMII == xxx)  
@@ -446,30 +513,26 @@ for (xxx in uniqueName_SXMII) {
   Vote_max_slides_SXMII[[xxx]] <- back
 }
 
-SXMII_Clinical <- dataframeC
 names(Vote_max_slides_SXMII) <- uniqueName_SXMII
 Vote_max_slides_SXMII <- do.call(c,Vote_max_slides_SXMII)
 
-Vote_max_slides_SXMII <- Vote_max_slides_SXMII[match(SXMII_Clinical$SZID,names(Vote_max_slides_SXMII))]
+Vote_max_slides_SXMII <- Vote_max_slides_SXMII[match(SXMII_Clinical$IMID,names(Vote_max_slides_SXMII))]
 
 factor_labels <- labels(Vote_max_slides_SXMII)
 
-sum(Names_SXMII %in% factor_labels)#1142张片子
 
-
-SXMII_clinical_M1 <- SXMII_Clinical[match(names(Vote_max_slides_SXMII),SXMII_Clinical$SZID),]
-SXMII_clinical_M1$os.event_new <- str_replace_all(SXMII_clinical_M1$os.event_new,"Deceased","1")
-SXMII_clinical_M1$os.event_new <- str_replace_all(SXMII_clinical_M1$os.event_new,"Living","0")
-SXMII_clinical_M1$os.event_new[which(SXMII_clinical_M1$os.event_new=="Loss to follow-up")] <- NA
-SXMII_clinical_M1 <- SXMII_clinical_M1[!is.na(SXMII_clinical_M1$os.event_new),]
-SXMII_clinical_M1$os.event_new <- as.numeric(SXMII_clinical_M1$os.event_new)
-Vote_max_slides_SXMII <- Vote_max_slides_SXMII[match(SXMII_clinical_M1$SZID,names(Vote_max_slides_SXMII))]
+SXMII_clinical_M1 <- SXMII_Clinical[match(names(Vote_max_slides_SXMII),SXMII_Clinical$IMID),]
+SXMII_clinical_M1$OS_Event <- str_replace_all(SXMII_clinical_M1$OS_Event,"Deceased","1")
+SXMII_clinical_M1$OS_Event <- str_replace_all(SXMII_clinical_M1$OS_Event,"Living","0")
+SXMII_clinical_M1$OS_Event[which(SXMII_clinical_M1$OS_Event=="Loss to follow-up")] <- NA
+SXMII_clinical_M1 <- SXMII_clinical_M1[!is.na(SXMII_clinical_M1$OS_Event),]
+SXMII_clinical_M1$OS_Event <- as.numeric(SXMII_clinical_M1$OS_Event)
+Vote_max_slides_SXMII <- Vote_max_slides_SXMII[match(SXMII_clinical_M1$IMID,names(Vote_max_slides_SXMII))]
 
 labels <- factor(Vote_max_slides_SXMII)
 legend.labs <- as.vector(na.omit(unique(labels)))
-input <- as.data.frame( cbind(SXMII_clinical_M1$os.time_new/30,SXMII_clinical_M1$os.event_new))
+input <- as.data.frame(cbind((SXMII_clinical_M1$OS_Time),SXMII_clinical_M1$OS_Event))
 input$V1 <- as.numeric(input$V1)
-SXMII_OSP <- P_cal(clinical = input,labels=labels)
 
 SXMII_OS <- myplot(input,labels,ylab="Overall survival",font = "sans",
                   risk.table = T,risk.table.ratio = 0.4,title = "SXM-II",
@@ -480,7 +543,6 @@ SXMII_OS <- myplot(input,labels,ylab="Overall survival",font = "sans",
 #Figure 5E
 #SXMI——sankeyplot_patient_level
 library(ggalluvial)
-library(export)
 
 #final_predict <- read.csv("./SXMIpredict_patient_level.csv")
 #ture_label <- read.csv("./label4patients.csv")
