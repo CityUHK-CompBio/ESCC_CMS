@@ -11,7 +11,7 @@ We built a gene expression data-based classifier for ECMSs prediction.
 
 ### Example: TCGA-ESCC, GSE53625 and GSE45670 prediction
 
-Our study used the TCGA-ESCC, GSE53625, and GSE45670 datasets. Here, we show how to obtain ECMS label using our gene expression classifier.
+Our study used the TCGA-ESCC, GSE53625, and GSE45670 datasets. Here, we show how to obtain ECMS labels (Detailed in Supplementary Table 3) using our gene expression classifier.
 
 ```{r}
 load("./ECMS.model.rdata")
