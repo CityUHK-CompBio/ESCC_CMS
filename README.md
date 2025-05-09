@@ -31,7 +31,7 @@ table(gse45670.predict)
 
 ### Assign patient to ECMSs
 
-If you have your own data, pls prepare a scaled expression matrix first. 
+If you have your own data, pls prepare a scaled expression matrix first. Log2 transformation is also required for NGS dataset.
 
 ```{r}
 # check features used in our model
